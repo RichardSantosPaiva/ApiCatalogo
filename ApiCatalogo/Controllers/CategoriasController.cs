@@ -1,6 +1,7 @@
 ﻿using ApiCatalogo.Context;
 using ApiCatalogo.Filters;
 using ApiCatalogo.Model;
+using ApiCatalogo.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -12,50 +13,35 @@ namespace ApiCatalogo.Controllers
     [ApiController]
     public class CategoriasController : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly IUnitOfWork _uof;
         private readonly ILogger _logger;
 
-        public CategoriasController(AppDbContext context, ILogger<CategoriasController> logger)
+        public CategoriasController( IUnitOfWork uof,
+            ILogger<CategoriasController> logger)
         {
-            _context = context;
             _logger = logger;
+            _uof = uof;
         }
 
-
-        [HttpGet("produtos")]
-        public ActionResult<IEnumerable<Categoria>> GetCategoriasProdutos()
-        {
-            // return _context.Categorias.Include(p => p.Produtos).ToList();
-            _logger.LogInformation("========= GET api/categorias/produtos ===========");  
-            return _context.Categorias.Include(p => p.Produtos).Where(c => c.CategoriaId <= 5).ToList();
-
-        }
 
         [HttpGet]
         [ServiceFilter(typeof(ApiLogginFilters))]
         public async Task<ActionResult<IEnumerable<Categoria>>> Get()
         {
             _logger.LogInformation("========= GET api/categorias ===========");
+        
+            var categorias = _uof.CategoriaRepository.GetAll();
+            return Ok(categorias);
 
-            try
-            {
-                return await _context.Categorias.AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(StatusCodes.Status500InternalServerError,
-                    "Ocorreu um problema ao tratar a sua solicitação");
-            }
         }
-
 
 
         [HttpGet("{id:int}", Name = "ObterCategoria")]
         public ActionResult<Categoria> Get(int id)
         {
-            var categoria = _context.Categorias.FirstOrDefault(p => p.CategoriaId == id);
+            var categoria = _uof.CategoriaRepository.Get(c => c.CategoriaId == id) ;
 
-            if (categoria == null)
+            if (categoria is null)
             {
                 _logger.LogWarning($"Categoria com id={id} não encontrada...");
                 return NotFound($"Categoria com id={id} não encontrada...");
@@ -73,11 +59,11 @@ namespace ApiCatalogo.Controllers
                 return BadRequest("Dados inválidos");
             }
 
-            _context.Categorias.Add(categoria);
-            _context.SaveChanges();
+            var categoriaCriada = _uof.CategoriaRepository.Create(categoria);
+            _uof.Commit();
 
             return new CreatedAtRouteResult("ObterCategoria",
-                new { id = categoria.CategoriaId }, categoria);
+                new { id = categoriaCriada.CategoriaId }, categoriaCriada);
         }
 
         [HttpPut("{id:int}")]
@@ -89,8 +75,8 @@ namespace ApiCatalogo.Controllers
                 return BadRequest("Dados Inválidos");    
             }
 
-            _context.Entry(categoria).State = EntityState.Modified;
-            _context.SaveChanges();
+            _uof.CategoriaRepository.Update(categoria);
+            _uof.Commit();
 
             return Ok(categoria);
         }
@@ -98,7 +84,7 @@ namespace ApiCatalogo.Controllers
         [HttpDelete("{id:int}")]
         public ActionResult Delete(int id)
         {
-            var categoria = _context.Categorias.FirstOrDefault(p => p.CategoriaId == id);
+            var categoria = _uof.CategoriaRepository.Get(c => c.CategoriaId == id);
 
             if (categoria is null)
             {
@@ -106,11 +92,12 @@ namespace ApiCatalogo.Controllers
                 return NotFound($"Categoria com id={id} não encontrada...");
             }
 
-            _context.Categorias.Remove(categoria);
-            _context.SaveChanges();
+            var categoriaExcluida = _uof.CategoriaRepository.Delete(categoria);
+            _uof.Commit();
 
             return Ok(categoria);
         }
 
     }
 }
+
